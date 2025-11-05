@@ -1,26 +1,21 @@
 [package]
-name = "atomic_enum"
-version = "0.3.0"
-authors = ["Thomas Bächler <thomas.baechler@gmx.de>"]
-edition = "2021"
-
-description = "An attribute to create an atomic wrapper around a C-style enum"
-repository = "https://github.com/brain0/atomic_enum"
-keywords = ["atomic", "enum"]
-categories = ["concurrency"]
-license = "MIT"
-
-[badges]
-maintenance = { status = "passively-maintained" }
+    authors     = ["Markus @ DasBossGit", "Thomas Bächler <thomas.baechler@gmx.de>"]
+    categories  = ["concurrency"]
+    description = "An attribute to create an atomic wrapper around a C-style enum"
+    edition     = "2024"
+    keywords    = ["atomic", "enum"]
+    name        = "atomic_enum"
+    version     = "0.3.0"
 
 [lib]
-proc-macro = true
+    proc-macro = true
 
 [features]
-default = ["cas"]
-cas = [] # enables compare-and-swap operations on atomics
+    cas     = []      # enables compare-and-swap operations on atomics
+    default = ["cas"]
 
 [dependencies]
-syn = { version = "2.0.50", features = ["full"] }
-quote = "1.0.35"
-proc-macro2 = "1.0.78"
+    proc-macro2 = "1"
+    quote       = "1"
+    simsearch   = "0.3"
+    syn         = { version = "2", features = ["full"] }

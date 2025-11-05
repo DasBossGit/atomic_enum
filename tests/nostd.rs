@@ -8,7 +8,7 @@ use core::sync::atomic::Ordering;
 use atomic_enum::atomic_enum;
 
 #[atomic_enum]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum FooBar {
     Foo,
     Bar,
@@ -45,7 +45,7 @@ mod result_conflict {
     pub type Result<T> = core::result::Result<T, ()>;
 
     #[atomic_enum]
-    #[derive(PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq)]
     enum FooBar {
         Foo,
         Bar,

@@ -5,7 +5,7 @@ use std::fmt::{Display, Formatter};
 use atomic_enum::atomic_enum;
 
 #[atomic_enum]
-#[derive(PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq)]
 enum DisplayableEnum {
     Foo,
 }

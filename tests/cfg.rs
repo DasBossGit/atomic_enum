@@ -2,13 +2,14 @@
 
 use atomic_enum::atomic_enum;
 
+#[derive(Debug)]
 #[atomic_enum]
 enum MyEnum {
     Foo,
     #[cfg(target_os = "multics")]
     Bar,
     #[cfg(not(target_os = "multics"))]
-    Baz
+    Baz,
 }
 
 // Foo and Baz should both be constructible.  Bar should not be, but that can only be verified from

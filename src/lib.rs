@@ -40,30 +40,13 @@
 //!
 //! The crate can be used in a `#[no_std]` environment.
 
+use ::quote::ToTokens;
 use ::simsearch::SimSearch;
 use ::syn::punctuated::Punctuated;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{quote, quote_spanned};
-use syn::{Attribute, Ident, ItemEnum, Variant, Visibility, parse_macro_input, spanned::Spanned};
-
-fn enum_definition<'a>(
-    attrs: impl IntoIterator<Item = Attribute>,
-    vis: &Visibility,
-    ident: &Ident,
-    variants: impl IntoIterator<Item = &'a Variant>,
-) -> TokenStream2 {
-    let attrs = attrs.into_iter();
-    let variants = variants.into_iter();
-
-    quote! {
-        #(#attrs)*
-        #[derive(Clone, Copy)]
-        #vis enum #ident {
-            #( #variants ),*
-        }
-    }
-}
+use syn::{Ident, ItemEnum, Variant, Visibility, parse_macro_input, spanned::Spanned};
 
 fn atomic_enum_definition(
     vis: &Visibility,
@@ -119,9 +102,9 @@ fn enum_to_repr(ident: &Ident, repr: TypeSize) -> TokenStream2 {
     }
 }
 
-fn enum_from_repr(
+fn enum_from_repr<'a>(
     ident: &Ident,
-    variants: impl IntoIterator<Item = Variant>,
+    variants: impl IntoIterator<Item = &'a Variant>,
     repr: TypeSize,
 ) -> TokenStream2 {
     let ty = match repr {
@@ -134,19 +117,20 @@ fn enum_from_repr(
 
     let variants_with_const_names: Vec<_> = variants
         .into_iter()
+        .cloned()
         .map(|v| {
             let c_id = Ident::new(&format!("INT_REPR_{}", &v.ident), v.ident.span());
-            (v.attrs, v.ident, c_id)
+            (v.ident, c_id)
         })
         .collect();
 
-    let variant_consts = variants_with_const_names.iter().map(|(attrs, id, c_id)| {
-        quote! { #(#attrs)* const #c_id: #ty = #ident::#id as #ty; }
+    let variant_consts = variants_with_const_names.iter().map(|(id, c_id)| {
+        quote! { const #c_id: #ty = #ident::#id as #ty; }
     });
 
     let variants_back = variants_with_const_names
         .iter()
-        .map(|(attrs, id, c_id)| quote! { #(#attrs)* #c_id => #ident::#id, });
+        .map(|(id, c_id)| quote! { #c_id => #ident::#id, });
 
     let fn_ident = Ident::new(&format!("from_{}", ty.to_string()), ident.span());
 
@@ -477,20 +461,6 @@ impl syn::parse::Parse for Assignment {
 }
 
 impl Assignment {
-    fn parse_greedy(input: syn::parse::ParseStream) -> syn::Result<()> {
-        let mut assignments = 0;
-
-        while !input.is_empty() {
-            if let Err(err) = input.parse::<Assignment>() {
-                if assignments == 0 {
-                    return Err(err);
-                }
-                break;
-            }
-            assignments += 1;
-        }
-        Ok(())
-    }
     fn peek(input: syn::parse::ParseStream) -> bool {
         input.peek(syn::Token![=]) || input.peek(syn::Token![:])
     }
@@ -564,8 +534,6 @@ impl syn::parse::Parse for OptionType {
 
 struct AtomicWrapperOptions {
     atomic_name: Option<Ident>,
-    // Generate only the atomic wrapper without the enum definition
-    only_atomic: bool,
 }
 
 impl AtomicWrapperOptions {
@@ -577,7 +545,7 @@ impl AtomicWrapperOptions {
         "atomic_ident",
         "atomic_identifier",
     ];
-    const ONLY_ATOMIC_FLAGS: &[&'static str] = &[
+    /* const ONLY_ATOMIC_FLAGS: &[&'static str] = &[
         "only_atomic",
         "atomic_only",
         "onlyatomic",
@@ -593,23 +561,20 @@ impl AtomicWrapperOptions {
         "wrapper_only",
         "only_wrapper",
         "wrapper",
-    ];
+    ]; */
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Keys {
     AtomicName,
-    OnlyAtomic,
 }
 
 impl syn::parse::Parse for AtomicWrapperOptions {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut fuzzy_engine = SimSearch::<Keys>::new();
         fuzzy_engine.insert_tokens(Keys::AtomicName, AtomicWrapperOptions::ATOMIC_NAMES);
-        fuzzy_engine.insert_tokens(Keys::OnlyAtomic, AtomicWrapperOptions::ONLY_ATOMIC_FLAGS);
 
         let mut atomic_name: Option<Ident> = None;
-        let mut only_atomic = None;
 
         // Parse arguments as Punctuated<Expr, Comma>
 
@@ -653,33 +618,6 @@ impl syn::parse::Parse for AtomicWrapperOptions {
                             ));
                         }
                     }
-                    (Keys::OnlyAtomic, None) => {
-                        if only_atomic.is_some() {
-                            return Err(syn::Error::new(
-                                input.span(),
-                                format!("Duplicate option key: {}", key_str),
-                            ));
-                        }
-
-                        only_atomic = Some(true);
-                    }
-                    (Keys::OnlyAtomic, Some(tt)) => {
-                        if only_atomic.is_some() {
-                            return Err(syn::Error::new(
-                                input.span(),
-                                format!("Duplicate option key: {}", key_str),
-                            ));
-                        }
-                        // Parse tt as bool
-                        let span = tt.span();
-                        let value: syn::LitBool = syn::parse2(tt).map_err(|_| {
-                            syn::Error::new(
-                                span,
-                                format!("Expected boolean literal for option key: {}", key_str),
-                            )
-                        })?;
-                        only_atomic = Some(value.value);
-                    }
                 }
             } else {
                 return Err(syn::Error::new(
@@ -689,10 +627,7 @@ impl syn::parse::Parse for AtomicWrapperOptions {
             }
         }
 
-        Ok(AtomicWrapperOptions {
-            atomic_name,
-            only_atomic: only_atomic.unwrap_or(false),
-        })
+        Ok(AtomicWrapperOptions { atomic_name })
     }
 }
 
@@ -750,7 +685,7 @@ enum TypeSize {
     Usize,
 }
 
-#[proc_macro_attribute]
+#[proc_macro_derive(AtomicEnum, attributes(atomic_enum))]
 /// Creates an atomic wrapper around a C-style enum.
 ///
 /// The generated type is a wrapper around a suitable atomic integer type that transparently
@@ -785,8 +720,9 @@ enum TypeSize {
 ///
 /// let state = StateAtomic::new(State::Off);
 /// ```
-pub fn atomic_enum(args: TokenStream, input: TokenStream) -> TokenStream {
+pub fn atomic_enum(input: TokenStream) -> TokenStream {
     // Parse the input
+    let input = parse_macro_input!(input as ItemEnum);
     let ItemEnum {
         attrs,
         vis,
@@ -794,7 +730,7 @@ pub fn atomic_enum(args: TokenStream, input: TokenStream) -> TokenStream {
         generics,
         variants,
         ..
-    } = parse_macro_input!(input as ItemEnum);
+    } = &input;
 
     let repr = attrs
         .iter()
@@ -851,15 +787,26 @@ pub fn atomic_enum(args: TokenStream, input: TokenStream) -> TokenStream {
     let mut output = TokenStream2::new();
 
     // Define the atomic wrapper
-    let options = parse_macro_input!(args as AtomicWrapperOptions);
+    let args = proc_macro2::TokenStream::from(
+        input
+            .attrs
+            .iter()
+            .find_map(|attr| {
+                if attr.path().is_ident("atomic_enum") {
+                    Some(attr.to_token_stream())
+                } else {
+                    None
+                }
+            })
+            .unwrap_or_else(|| proc_macro2::TokenStream::new()),
+    );
+
+    let options = syn::parse2::<AtomicWrapperOptions>(args)
+        .unwrap_or(AtomicWrapperOptions { atomic_name: None });
 
     let atomic_ident = options
         .atomic_name
         .unwrap_or_else(|| Ident::new(&format!("Atomic{}", ident), ident.span()));
-
-    if !options.only_atomic {
-        output.extend(enum_definition(attrs, &vis, &ident, &variants));
-    }
 
     output.extend(atomic_enum_definition(&vis, &ident, &atomic_ident, repr));
 
@@ -905,9 +852,10 @@ pub fn atomic_enum(args: TokenStream, input: TokenStream) -> TokenStream {
 
     output.extend(quote! {
         impl #atomic_ident {
+            #atomic_enum_new
             #enum_to_usize
             #enum_from_usize
-            #atomic_enum_new
+
             #atomic_enum_into_inner
             #atomic_enum_set
             #atomic_enum_get

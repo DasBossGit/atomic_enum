@@ -1,9 +1,8 @@
 #![allow(unexpected_cfgs)] // multics is deliberately always false
 
-use atomic_enum::atomic_enum;
+use ::atomic_enum::AtomicEnum;
 
-#[derive(Debug)]
-#[atomic_enum]
+#[derive(Debug, AtomicEnum)]
 enum MyEnum {
     Foo,
     #[cfg(target_os = "multics")]

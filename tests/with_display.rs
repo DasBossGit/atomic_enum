@@ -2,10 +2,9 @@ use core::sync::atomic::Ordering;
 use std::fmt;
 use std::fmt::{Display, Formatter};
 
-use atomic_enum::atomic_enum;
+use ::atomic_enum::AtomicEnum;
 
-#[atomic_enum]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AtomicEnum)]
 enum DisplayableEnum {
     Foo,
 }

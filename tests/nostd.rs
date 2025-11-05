@@ -5,10 +5,9 @@
 
 use core::sync::atomic::Ordering;
 
-use atomic_enum::atomic_enum;
+use ::atomic_enum::AtomicEnum;
 
-#[atomic_enum]
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, AtomicEnum)]
 enum FooBar {
     Foo,
     Bar,
@@ -38,14 +37,14 @@ fn test_no_std_use() {
 }
 
 mod result_conflict {
-    use atomic_enum::atomic_enum;
     use core::sync::atomic::Ordering;
+
+    use ::atomic_enum::AtomicEnum;
 
     #[allow(dead_code)]
     pub type Result<T> = core::result::Result<T, ()>;
 
-    #[atomic_enum]
-    #[derive(Debug, PartialEq, Eq)]
+    #[derive(Debug, PartialEq, Eq, AtomicEnum)]
     enum FooBar {
         Foo,
         Bar,

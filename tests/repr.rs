@@ -1,7 +1,8 @@
 use ::atomic_enum::AtomicEnum;
 
 #[repr(usize)]
-#[derive(Debug, Default, AtomicEnum)]
+#[derive(Debug, Default, AtomicEnum, Clone, Copy, PartialEq, Eq)]
+#[atomic_enum(derive = Default)]
 enum MyEnum2 {
     Foo,
     #[default]

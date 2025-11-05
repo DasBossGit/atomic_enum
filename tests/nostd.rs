@@ -7,7 +7,7 @@ use core::sync::atomic::Ordering;
 
 use ::atomic_enum::AtomicEnum;
 
-#[derive(Debug, PartialEq, Eq, AtomicEnum)]
+#[derive(Debug, PartialEq, Eq, AtomicEnum, Copy, Clone)]
 enum FooBar {
     Foo,
     Bar,

@@ -53,6 +53,7 @@ fn atomic_enum_definition(
     ident: &Ident,
     atomic_ident: &Ident,
     size: TypeSize,
+    derive: Option<TokenStream2>,
 ) -> TokenStream2 {
     let atomic_ident_docs = format!(
         "A wrapper around [`{0}`] which can be safely shared between threads.
@@ -78,8 +79,15 @@ This type uses an `{atomic_ty}` to store the enum value.
         TypeSize::Usize => quote! { core::sync::atomic::AtomicUsize },
     };
 
+    let derive_clause = if let Some(derives) = derive {
+        quote! { #[derive(#derives)] }
+    } else {
+        quote! {}
+    };
+
     quote! {
         #[doc = #atomic_ident_docs]
+        #derive_clause
         #vis struct #atomic_ident(#atomic_type);
     }
 }
@@ -424,11 +432,9 @@ impl ToString for Identifer {
 
 impl syn::parse::Parse for Identifer {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        if input.peek(Ident) {
-            let ident = input.parse::<Ident>()?;
+        if let Ok(ident) = input.parse::<Ident>() {
             Ok(Identifer::Ident(ident))
-        } else if input.peek(syn::Lit) {
-            let lit = input.parse::<syn::Lit>()?;
+        } else if let Ok(lit) = input.parse::<syn::Lit>() {
             Ok(Identifer::Lit(lit))
         } else if let Ok(path) = input.parse::<syn::Path>() {
             Ok(Identifer::Path(path))
@@ -497,15 +503,7 @@ impl syn::parse::Parse for OptionType {
             ));
         }
 
-        let key;
-        if let Ok(identifier) = input.parse::<Identifer>() {
-            key = identifier.to_string();
-        } else {
-            return Err(syn::Error::new(
-                input.span(),
-                "Expected identifier, literal or path as option key",
-            ));
-        }
+        let key = input.parse::<Identifer>()?.to_string();
         if Assignment::peek(input) {
             while Assignment::peek(input) {
                 let _assignment: Assignment = input.parse()?;
@@ -534,6 +532,7 @@ impl syn::parse::Parse for OptionType {
 
 struct AtomicWrapperOptions {
     atomic_name: Option<Ident>,
+    derive: Option<TokenStream2>,
 }
 
 impl AtomicWrapperOptions {
@@ -545,6 +544,14 @@ impl AtomicWrapperOptions {
         "atomic_ident",
         "atomic_identifier",
     ];
+    const DERIVE_NAMES: &[&'static str] = &[
+        "derive",
+        "derives",
+        "auto_derive",
+        "auto-derive",
+        "autoderive",
+    ];
+
     /* const ONLY_ATOMIC_FLAGS: &[&'static str] = &[
         "only_atomic",
         "atomic_only",
@@ -567,14 +574,17 @@ impl AtomicWrapperOptions {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Keys {
     AtomicName,
+    Derive,
 }
 
 impl syn::parse::Parse for AtomicWrapperOptions {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
         let mut fuzzy_engine = SimSearch::<Keys>::new();
         fuzzy_engine.insert_tokens(Keys::AtomicName, AtomicWrapperOptions::ATOMIC_NAMES);
+        fuzzy_engine.insert_tokens(Keys::Derive, AtomicWrapperOptions::DERIVE_NAMES);
 
         let mut atomic_name: Option<Ident> = None;
+        let mut derive: Option<TokenStream2> = None;
 
         // Parse arguments as Punctuated<Expr, Comma>
 
@@ -618,6 +628,16 @@ impl syn::parse::Parse for AtomicWrapperOptions {
                             ));
                         }
                     }
+                    (Keys::Derive, None) => {
+                        return Err(syn::Error::new(
+                            input.span(),
+                            format!("Expected value for option key: {}", key_str),
+                        ));
+                    }
+                    (Keys::Derive, Some(tt)) => {
+                        derive.as_mut().map(|prev| prev.extend(quote! { , }));
+                        derive.get_or_insert_with(|| TokenStream2::new()).extend(tt);
+                    }
                 }
             } else {
                 return Err(syn::Error::new(
@@ -627,7 +647,10 @@ impl syn::parse::Parse for AtomicWrapperOptions {
             }
         }
 
-        Ok(AtomicWrapperOptions { atomic_name })
+        Ok(AtomicWrapperOptions {
+            atomic_name,
+            derive,
+        })
     }
 }
 
@@ -787,28 +810,37 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     let mut output = TokenStream2::new();
 
     // Define the atomic wrapper
-    let args = proc_macro2::TokenStream::from(
-        input
-            .attrs
-            .iter()
-            .find_map(|attr| {
-                if attr.path().is_ident("atomic_enum") {
-                    Some(attr.to_token_stream())
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| proc_macro2::TokenStream::new()),
-    );
+    let args = input.attrs.iter().find_map(|attr| {
+        if attr.path().is_ident("atomic_enum") {
+            Some(attr)
+        } else {
+            None
+        }
+    });
 
-    let options = syn::parse2::<AtomicWrapperOptions>(args)
-        .unwrap_or(AtomicWrapperOptions { atomic_name: None });
+    let options = if let Some(attr) = args {
+        match attr.parse_args::<AtomicWrapperOptions>() {
+            Ok(opts) => opts,
+            Err(err) => return err.to_compile_error().into(),
+        }
+    } else {
+        AtomicWrapperOptions {
+            atomic_name: None,
+            derive: None,
+        }
+    };
 
     let atomic_ident = options
         .atomic_name
         .unwrap_or_else(|| Ident::new(&format!("Atomic{}", ident), ident.span()));
 
-    output.extend(atomic_enum_definition(&vis, &ident, &atomic_ident, repr));
+    output.extend(atomic_enum_definition(
+        &vis,
+        &ident,
+        &atomic_ident,
+        repr,
+        options.derive,
+    ));
 
     // Write the impl block for the atomic wrapper
     let enum_to_usize = enum_to_repr(&ident, repr);

@@ -40,6 +40,7 @@
 //!
 //! The crate can be used in a `#[no_std]` environment.
 
+use ::proc_macro2::TokenTree;
 use ::quote::ToTokens;
 use ::simsearch::SimSearch;
 use ::syn::punctuated::Punctuated;
@@ -80,6 +81,24 @@ This type uses an `{atomic_ty}` to store the enum value.
     };
 
     let derive_clause = if let Some(derives) = derive {
+        let derives = derives
+            .into_iter()
+            .filter_map(|tt| {
+                if let TokenTree::Group(inner) = &tt {
+                    let stream = inner.stream().into_iter().collect::<Vec<_>>();
+                    if stream.len() == 0 {
+                        None
+                    } else {
+                        Some(stream)
+                    }
+                } else {
+                    Some(vec![tt])
+                }
+            })
+            .flatten()
+            .collect::<Vec<_>>();
+        let derives = TokenStream2::from_iter(derives.into_iter());
+
         quote! { #[derive(#derives)] }
     } else {
         quote! {}
@@ -518,7 +537,7 @@ impl syn::parse::Parse for OptionType {
                 ));
             }
 
-            while !input.is_empty() && !Assignment::peek(input) {
+            while !input.is_empty() && !Assignment::peek(input) && !input.peek(syn::Token![,]) {
                 let tt: proc_macro2::TokenTree = input.parse()?;
                 value.push(tt);
             }
@@ -533,6 +552,7 @@ impl syn::parse::Parse for OptionType {
 struct AtomicWrapperOptions {
     atomic_name: Option<Ident>,
     derive: Option<TokenStream2>,
+    underlying_type_size: Option<TypeSize>,
 }
 
 impl AtomicWrapperOptions {
@@ -550,6 +570,13 @@ impl AtomicWrapperOptions {
         "auto_derive",
         "auto-derive",
         "autoderive",
+    ];
+    const SIZE_NAMES: &[&'static str] = &[
+        "size",
+        "repr",
+        "representation",
+        "underlying_type",
+        "underlyingtype",
     ];
 
     /* const ONLY_ATOMIC_FLAGS: &[&'static str] = &[
@@ -575,6 +602,7 @@ impl AtomicWrapperOptions {
 enum Keys {
     AtomicName,
     Derive,
+    Size,
 }
 
 impl syn::parse::Parse for AtomicWrapperOptions {
@@ -582,9 +610,11 @@ impl syn::parse::Parse for AtomicWrapperOptions {
         let mut fuzzy_engine = SimSearch::<Keys>::new();
         fuzzy_engine.insert_tokens(Keys::AtomicName, AtomicWrapperOptions::ATOMIC_NAMES);
         fuzzy_engine.insert_tokens(Keys::Derive, AtomicWrapperOptions::DERIVE_NAMES);
+        fuzzy_engine.insert_tokens(Keys::Size, AtomicWrapperOptions::SIZE_NAMES);
 
         let mut atomic_name: Option<Ident> = None;
         let mut derive: Option<TokenStream2> = None;
+        let mut underlying_type_size: Option<TypeSize> = None;
 
         // Parse arguments as Punctuated<Expr, Comma>
 
@@ -638,6 +668,47 @@ impl syn::parse::Parse for AtomicWrapperOptions {
                         derive.as_mut().map(|prev| prev.extend(quote! { , }));
                         derive.get_or_insert_with(|| TokenStream2::new()).extend(tt);
                     }
+                    (Keys::Size, None) => {
+                        return Err(syn::Error::new(
+                            input.span(),
+                            format!("Expected value for option key: {}", key_str),
+                        ));
+                    }
+                    (Keys::Size, Some(tt)) => {
+                        if underlying_type_size.is_some() {
+                            /* return Err(syn::Error::new(
+                                input.span(),
+                                format!("Duplicate option key: {}", key_str),
+                            )); */
+                        }
+                        // Parse tt as Identifier
+                        let span = tt.span();
+                        if let Ok(ident) = syn::parse2::<Identifer>(tt) {
+                            let value = ident.to_string();
+                            let type_size = match value.as_str() {
+                                "u8" | "U8" => TypeSize::U8,
+                                "u16" | "U16" => TypeSize::U16,
+                                "u32" | "U32" => TypeSize::U32,
+                                "u64" | "U64" => TypeSize::U64,
+                                "usize" | "Usize" | "isize" | "Isize" => TypeSize::Usize,
+                                _ => {
+                                    return Err(syn::Error::new(
+                                        span,
+                                        format!(
+                                            "Invalid underlying type size for option key: {}",
+                                            key_str
+                                        ),
+                                    ));
+                                }
+                            };
+                            underlying_type_size = Some(type_size);
+                        } else {
+                            return Err(syn::Error::new(
+                                span,
+                                format!("Expected a valid identifier for option key: {}", key_str),
+                            ));
+                        }
+                    }
                 }
             } else {
                 return Err(syn::Error::new(
@@ -650,6 +721,7 @@ impl syn::parse::Parse for AtomicWrapperOptions {
         Ok(AtomicWrapperOptions {
             atomic_name,
             derive,
+            underlying_type_size,
         })
     }
 }
@@ -810,15 +882,24 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     let mut output = TokenStream2::new();
 
     // Define the atomic wrapper
-    let args = input.attrs.iter().find_map(|attr| {
-        if attr.path().is_ident("atomic_enum") {
-            Some(attr)
-        } else {
-            None
-        }
-    });
+    let args = input
+        .attrs
+        .iter()
+        .filter_map(|attr| {
+            if attr.path().is_ident("atomic_enum") {
+                Some(attr)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<_>>();
+    if args.len() > 1 {
+        let span = args[1].span();
+        let err = quote_spanned! {span=> compile_error!("Duplicate 'atomic_enum' attribute."); };
+        return err.into();
+    }
 
-    let options = if let Some(attr) = args {
+    let options = if let Some(attr) = args.first() {
         match attr.parse_args::<AtomicWrapperOptions>() {
             Ok(opts) => opts,
             Err(err) => return err.to_compile_error().into(),
@@ -827,7 +908,14 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
         AtomicWrapperOptions {
             atomic_name: None,
             derive: None,
+            underlying_type_size: None,
         }
+    };
+
+    let repr = if let Some(size) = options.underlying_type_size {
+        size
+    } else {
+        repr
     };
 
     let atomic_ident = options

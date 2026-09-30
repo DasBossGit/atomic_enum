@@ -41,8 +41,7 @@
 //! The crate can be used in a `#[no_std]` environment.
 
 use ::proc_macro2::TokenTree;
-use ::quote::ToTokens;
-use ::simsearch::SimSearch;
+use ::simsearch::Index;
 use ::syn::punctuated::Punctuated;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
@@ -68,7 +67,14 @@ This type uses an `{atomic_ty}` to store the enum value.
             TypeSize::U16 => "AtomicU16",
             TypeSize::U32 => "AtomicU32",
             TypeSize::U64 => "AtomicU64",
+            TypeSize::U128 => "AtomicU128",
             TypeSize::Usize => "AtomicUsize",
+            TypeSize::I8 => "AtomicI8",
+            TypeSize::I16 => "AtomicI16",
+            TypeSize::I32 => "AtomicI32",
+            TypeSize::I64 => "AtomicI64",
+            TypeSize::I128 => "AtomicI128",
+            TypeSize::Isize => "AtomicIsize",
         }
     );
 
@@ -77,7 +83,14 @@ This type uses an `{atomic_ty}` to store the enum value.
         TypeSize::U16 => quote! { core::sync::atomic::AtomicU16 },
         TypeSize::U32 => quote! { core::sync::atomic::AtomicU32 },
         TypeSize::U64 => quote! { core::sync::atomic::AtomicU64 },
+        TypeSize::U128 => quote! { core::sync::atomic::AtomicU128 },
         TypeSize::Usize => quote! { core::sync::atomic::AtomicUsize },
+        TypeSize::I8 => quote! { core::sync::atomic::AtomicI8 },
+        TypeSize::I16 => quote! { core::sync::atomic::AtomicI16 },
+        TypeSize::I32 => quote! { core::sync::atomic::AtomicI32 },
+        TypeSize::I64 => quote! { core::sync::atomic::AtomicI64 },
+        TypeSize::I128 => quote! { core::sync::atomic::AtomicI128 },
+        TypeSize::Isize => quote! { core::sync::atomic::AtomicIsize },
     };
 
     let derive_clause = if let Some(derives) = derive {
@@ -111,69 +124,6 @@ This type uses an `{atomic_ty}` to store the enum value.
     }
 }
 
-fn enum_to_repr(ident: &Ident, repr: TypeSize) -> TokenStream2 {
-    let ty = match repr {
-        TypeSize::U8 => quote! { u8 },
-        TypeSize::U16 => quote! { u16 },
-        TypeSize::U32 => quote! { u32 },
-        TypeSize::U64 => quote! { u64 },
-        TypeSize::Usize => quote! { usize },
-    };
-
-    let fn_ident = Ident::new(&format!("to_{}", ty.to_string()), ident.span());
-
-    quote! {
-        const fn #fn_ident(val: #ident) -> #ty {
-            val as #ty
-        }
-    }
-}
-
-fn enum_from_repr<'a>(
-    ident: &Ident,
-    variants: impl IntoIterator<Item = &'a Variant>,
-    repr: TypeSize,
-) -> TokenStream2 {
-    let ty = match repr {
-        TypeSize::U8 => quote! { u8 },
-        TypeSize::U16 => quote! { u16 },
-        TypeSize::U32 => quote! { u32 },
-        TypeSize::U64 => quote! { u64 },
-        TypeSize::Usize => quote! { usize },
-    };
-
-    let variants_with_const_names: Vec<_> = variants
-        .into_iter()
-        .cloned()
-        .map(|v| {
-            let c_id = Ident::new(&format!("INT_REPR_{}", &v.ident), v.ident.span());
-            (v.ident, c_id)
-        })
-        .collect();
-
-    let variant_consts = variants_with_const_names.iter().map(|(id, c_id)| {
-        quote! { const #c_id: #ty = #ident::#id as #ty; }
-    });
-
-    let variants_back = variants_with_const_names
-        .iter()
-        .map(|(id, c_id)| quote! { #c_id => #ident::#id, });
-
-    let fn_ident = Ident::new(&format!("from_{}", ty.to_string()), ident.span());
-
-    quote! {
-        const fn #fn_ident(val: #ty) -> #ident {
-            #![allow(non_upper_case_globals)]
-            #(#variant_consts)*
-
-            match val {
-                #(#variants_back)*
-                _ => panic!("Invalid enum discriminant"),
-            }
-        }
-    }
-}
-
 fn atomic_enum_new(ident: &Ident, atomic_ident: &Ident, repr: TypeSize) -> TokenStream2 {
     let atomic_ident_docs = format!(
         "Creates a new atomic [`{0}`].
@@ -187,7 +137,14 @@ fn atomic_enum_new(ident: &Ident, atomic_ident: &Ident, repr: TypeSize) -> Token
         TypeSize::U16 => quote! { u16 },
         TypeSize::U32 => quote! { u32 },
         TypeSize::U64 => quote! { u64 },
+        TypeSize::U128 => quote! { u128 },
         TypeSize::Usize => quote! { usize },
+        TypeSize::I8 => quote! { i8 },
+        TypeSize::I16 => quote! { i16 },
+        TypeSize::I32 => quote! { i32 },
+        TypeSize::I64 => quote! { i64 },
+        TypeSize::I128 => quote! { i128 },
+        TypeSize::Isize => quote! { isize },
     };
 
     let atomic_ty = match repr {
@@ -195,48 +152,53 @@ fn atomic_enum_new(ident: &Ident, atomic_ident: &Ident, repr: TypeSize) -> Token
         TypeSize::U16 => quote! { core::sync::atomic::AtomicU16 },
         TypeSize::U32 => quote! { core::sync::atomic::AtomicU32 },
         TypeSize::U64 => quote! { core::sync::atomic::AtomicU64 },
+        TypeSize::U128 => quote! { core::sync::atomic::AtomicU128 },
         TypeSize::Usize => quote! { core::sync::atomic::AtomicUsize },
+        TypeSize::I8 => quote! { core::sync::atomic::AtomicI8 },
+        TypeSize::I16 => quote! { core::sync::atomic::AtomicI16 },
+        TypeSize::I32 => quote! { core::sync::atomic::AtomicI32 },
+        TypeSize::I64 => quote! { core::sync::atomic::AtomicI64 },
+        TypeSize::I128 => quote! { core::sync::atomic::AtomicI128 },
+        TypeSize::Isize => quote! { core::sync::atomic::AtomicIsize },
     };
-
-    let fn_to_repr = Ident::new(&format!("to_{}", ty.to_string()), ident.span());
 
     quote! {
         #[doc = #atomic_ident_docs]
         pub const fn new(v: #ident) -> #atomic_ident {
-            #atomic_ident(#atomic_ty::new(Self::#fn_to_repr(v)))
+            #atomic_ident(#atomic_ty::new(v as #ty))
         }
     }
 }
 
-fn atomic_enum_into_inner(ident: &Ident, from_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_into_inner(ident: &Ident, from_repr: &TokenStream2) -> TokenStream2 {
     quote! {
         /// Consumes the atomic and returns the contained value.
         ///
         /// This is safe because passing self by value guarantees that no other threads are concurrently accessing the atomic data.
         pub const fn into_inner(self) -> #ident {
-            Self::#from_repr(self.0.into_inner())
+            unsafe { #from_repr(self.0.into_inner()) }
         }
     }
 }
 
-fn atomic_enum_set(ident: &Ident, to_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_set(ident: &Ident, to_repr: &TokenStream2) -> TokenStream2 {
     quote! {
         /// Sets the value of the atomic without performing an atomic operation.
         ///
         /// This is safe because the mutable reference guarantees that no other threads are concurrently accessing the atomic data.
         pub fn set(&mut self, v: #ident) {
-            *self.0.get_mut() = Self::#to_repr(v);
+            *self.0.get_mut() = v as #to_repr;
         }
     }
 }
 
-fn atomic_enum_get(ident: &Ident, from_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_get(ident: &Ident, from_repr: &TokenStream2) -> TokenStream2 {
     quote! {
         /// Gets the value of the atomic without performing an atomic operation.
         ///
         /// This is safe because the mutable reference guarantees that no other threads are concurrently accessing the atomic data.
         pub fn get(&mut self) -> #ident {
-            Self::#from_repr(*self.0.get_mut())
+            unsafe { #from_repr(*self.0.get_mut()) }
         }
     }
 }
@@ -254,7 +216,7 @@ fn atomic_enum_swap_mut(ident: &Ident) -> TokenStream2 {
     }
 }
 
-fn atomic_enum_load(ident: &Ident, from_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_load(ident: &Ident, from_repr: &TokenStream2) -> TokenStream2 {
     quote! {
         /// Loads a value from the atomic.
         ///
@@ -264,12 +226,12 @@ fn atomic_enum_load(ident: &Ident, from_repr: &Ident) -> TokenStream2 {
         ///
         /// Panics if order is `Release` or `AcqRel`.
         pub fn load(&self, order: core::sync::atomic::Ordering) -> #ident {
-            Self::#from_repr(self.0.load(order))
+            unsafe { #from_repr(self.0.load(order)) }
         }
     }
 }
 
-fn atomic_enum_store(ident: &Ident, to_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_store(ident: &Ident, to_repr: &TokenStream2) -> TokenStream2 {
     quote! {
         /// Stores a value into the atomic.
         ///
@@ -279,13 +241,17 @@ fn atomic_enum_store(ident: &Ident, to_repr: &Ident) -> TokenStream2 {
         ///
         /// Panics if order is `Acquire` or `AcqRel`.
         pub fn store(&self, val: #ident, order: core::sync::atomic::Ordering) {
-            self.0.store(Self::#to_repr(val), order)
+            self.0.store(val as #to_repr, order)
         }
     }
 }
 
 #[cfg(feature = "cas")]
-fn atomic_enum_swap(ident: &Ident, to_repr: &Ident, from_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_swap(
+    ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
     quote! {
         /// Stores a value into the atomic, returning the previous value.
         ///
@@ -293,41 +259,17 @@ fn atomic_enum_swap(ident: &Ident, to_repr: &Ident, from_repr: &Ident) -> TokenS
         /// All ordering modes are possible. Note that using `Acquire` makes the store part of this operation `Relaxed`,
         /// and using `Release` makes the load part `Relaxed`.
         pub fn swap(&self, val: #ident, order: core::sync::atomic::Ordering) -> #ident {
-            Self::#from_repr(self.0.swap(Self::#to_repr(val), order))
+            unsafe { #from_repr(self.0.swap(val as #to_repr, order)) }
         }
     }
 }
 
 #[cfg(feature = "cas")]
-fn atomic_enum_compare_and_swap(ident: &Ident, to_repr: &Ident, from_repr: &Ident) -> TokenStream2 {
-    quote! {
-        /// Stores a value into the atomic if the current value is the same as the `current` value.
-        ///
-        /// The return value is always the previous value. If it is equal to `current`, then the value was updated.
-        ///
-        /// `compare_and_swap` also takes an `Ordering` argument which describes the memory ordering of this operation.
-        /// Notice that even when using `AcqRel`, the operation might fail and hence just perform an `Acquire` load, but
-        /// not have `Release` semantics. Using `Acquire` makes the store part of this operation `Relaxed` if it happens,
-        /// and using `Release` makes the load part `Relaxed`.
-        #[allow(deprecated)]
-        #[deprecated(note = "Use `compare_exchange` or `compare_exchange_weak` instead")]
-        pub fn compare_and_swap(
-            &self,
-            current: #ident,
-            new: #ident,
-            order: core::sync::atomic::Ordering
-        ) -> #ident {
-            Self::#from_repr(self.0.compare_and_swap(
-                Self::#to_repr(current),
-                Self::#to_repr(new),
-                order
-            ))
-        }
-    }
-}
-
-#[cfg(feature = "cas")]
-fn atomic_enum_compare_exchange(ident: &Ident, to_repr: &Ident, from_repr: &Ident) -> TokenStream2 {
+fn atomic_enum_compare_exchange(
+    ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
     quote! {
         /// Stores a value into the atomic if the current value is the same as the `current` value.
         ///
@@ -348,13 +290,13 @@ fn atomic_enum_compare_exchange(ident: &Ident, to_repr: &Ident, from_repr: &Iden
         ) -> core::result::Result<#ident, #ident> {
             self.0
                 .compare_exchange(
-                    Self::#to_repr(current),
-                    Self::#to_repr(new),
+                    current as #to_repr,
+                    new as #to_repr,
                     success,
                     failure
                 )
-                .map(Self::#from_repr)
-                .map_err(Self::#from_repr)
+                .map(|v| unsafe { #from_repr(v) })
+                .map_err(|v| unsafe { #from_repr(v) })
         }
     }
 }
@@ -362,8 +304,8 @@ fn atomic_enum_compare_exchange(ident: &Ident, to_repr: &Ident, from_repr: &Iden
 #[cfg(feature = "cas")]
 fn atomic_enum_compare_exchange_weak(
     ident: &Ident,
-    to_repr: &Ident,
-    from_repr: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
 ) -> TokenStream2 {
     quote! {
         /// Stores a value into the atomic if the current value is the same as the `current` value.
@@ -386,13 +328,13 @@ fn atomic_enum_compare_exchange_weak(
         ) -> core::result::Result<#ident, #ident> {
             self.0
                 .compare_exchange_weak(
-                    Self::#to_repr(current),
-                    Self::#to_repr(new),
+                    current as #to_repr,
+                    new as #to_repr,
                     success,
                     failure
                 )
-                .map(Self::#from_repr)
-                .map_err(Self::#from_repr)
+                .map(|v| unsafe { #from_repr(v) })
+                .map_err(|v| unsafe { #from_repr(v) })
         }
     }
 }
@@ -407,11 +349,20 @@ fn from_impl(ident: &Ident, atomic_ident: &Ident) -> TokenStream2 {
     }
 }
 
-fn debug_impl(atomic_ident: &Ident) -> TokenStream2 {
+fn debug_impl(ident: &Ident, atomic_ident: &Ident) -> TokenStream2 {
     quote! {
-        impl core::fmt::Debug for #atomic_ident {
+        impl core::fmt::Debug for #atomic_ident where for<'__atomic_enum_debug__> #ident: core::fmt::Debug {
             fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
                 core::fmt::Debug::fmt(&self.load(core::sync::atomic::Ordering::SeqCst), f)
+            }
+        }
+    }
+}
+fn default_impl(ident: &Ident, atomic_ident: &Ident) -> TokenStream2 {
+    quote! {
+        impl Default for #atomic_ident where for<'__atomic_enum_default__> #ident: Default {
+            fn default() -> Self {
+                #atomic_ident::new(Default::default())
             }
         }
     }
@@ -538,7 +489,7 @@ impl syn::parse::Parse for OptionType {
             }
 
             while !input.is_empty() && !Assignment::peek(input) && !input.peek(syn::Token![,]) {
-                let tt: proc_macro2::TokenTree = input.parse()?;
+                let tt: TokenTree = input.parse()?;
                 value.push(tt);
             }
             let value = TokenStream2::from_iter(value.into_iter());
@@ -553,6 +504,8 @@ struct AtomicWrapperOptions {
     atomic_name: Option<Ident>,
     derive: Option<TokenStream2>,
     underlying_type_size: Option<TypeSize>,
+    no_debug: bool,
+    no_default: bool,
 }
 
 impl AtomicWrapperOptions {
@@ -578,24 +531,8 @@ impl AtomicWrapperOptions {
         "underlying_type",
         "underlyingtype",
     ];
-
-    /* const ONLY_ATOMIC_FLAGS: &[&'static str] = &[
-        "only_atomic",
-        "atomic_only",
-        "onlyatomic",
-        "atomiconly",
-        "only",
-        "pure_atomic",
-        "atomic_pure",
-        "pureatomic",
-        "atomicpure",
-        "atomicwrapper",
-        "wrapperonly",
-        "atomicwrapperonly",
-        "wrapper_only",
-        "only_wrapper",
-        "wrapper",
-    ]; */
+    const NO_DEBUG: &[&'static str] = &["no_debug", "nodebug", "no-debug"];
+    const NO_DEFAULT: &[&'static str] = &["no_default", "nodefault", "no-default"];
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -603,18 +540,24 @@ enum Keys {
     AtomicName,
     Derive,
     Size,
+    NoDebug,
+    NoDefault,
 }
 
 impl syn::parse::Parse for AtomicWrapperOptions {
     fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
-        let mut fuzzy_engine = SimSearch::<Keys>::new();
-        fuzzy_engine.insert_tokens(Keys::AtomicName, AtomicWrapperOptions::ATOMIC_NAMES);
-        fuzzy_engine.insert_tokens(Keys::Derive, AtomicWrapperOptions::DERIVE_NAMES);
-        fuzzy_engine.insert_tokens(Keys::Size, AtomicWrapperOptions::SIZE_NAMES);
+        let mut fuzzy_engine = Index::<Keys>::new();
+        fuzzy_engine.insert_parts(Keys::AtomicName, AtomicWrapperOptions::ATOMIC_NAMES);
+        fuzzy_engine.insert_parts(Keys::Derive, AtomicWrapperOptions::DERIVE_NAMES);
+        fuzzy_engine.insert_parts(Keys::Size, AtomicWrapperOptions::SIZE_NAMES);
+        fuzzy_engine.insert_parts(Keys::NoDebug, AtomicWrapperOptions::NO_DEBUG);
+        fuzzy_engine.insert_parts(Keys::NoDefault, AtomicWrapperOptions::NO_DEFAULT);
 
         let mut atomic_name: Option<Ident> = None;
         let mut derive: Option<TokenStream2> = None;
         let mut underlying_type_size: Option<TypeSize> = None;
+        let mut no_debug: bool = false;
+        let mut no_default: bool = false;
 
         // Parse arguments as Punctuated<Expr, Comma>
 
@@ -631,7 +574,25 @@ impl syn::parse::Parse for AtomicWrapperOptions {
             let matches = fuzzy_engine.search(&key_alphanumeric).into_iter().next();
 
             if let Some(key) = matches {
-                match (key, option.into_value()) {
+                match (key.id, option.into_value()) {
+                    (Keys::NoDebug, None) => {
+                        no_debug = true;
+                    }
+                    (Keys::NoDebug, Some(_)) => {
+                        return Err(syn::Error::new(
+                            input.span(),
+                            format!("Unexpected value for option key: {}", key_str),
+                        ));
+                    }
+                    (Keys::NoDefault, None) => {
+                        no_default = true;
+                    }
+                    (Keys::NoDefault, Some(_)) => {
+                        return Err(syn::Error::new(
+                            input.span(),
+                            format!("Unexpected value for option key: {}", key_str),
+                        ));
+                    }
                     (Keys::AtomicName, None) => {
                         return Err(syn::Error::new(
                             input.span(),
@@ -684,13 +645,20 @@ impl syn::parse::Parse for AtomicWrapperOptions {
                         // Parse tt as Identifier
                         let span = tt.span();
                         if let Ok(ident) = syn::parse2::<Identifer>(tt) {
-                            let value = ident.to_string();
+                            let value = ident.to_string().to_lowercase();
                             let type_size = match value.as_str() {
-                                "u8" | "U8" => TypeSize::U8,
-                                "u16" | "U16" => TypeSize::U16,
-                                "u32" | "U32" => TypeSize::U32,
-                                "u64" | "U64" => TypeSize::U64,
-                                "usize" | "Usize" | "isize" | "Isize" => TypeSize::Usize,
+                                "u8" => TypeSize::U8,
+                                "u16" => TypeSize::U16,
+                                "u32" => TypeSize::U32,
+                                "u64" => TypeSize::U64,
+                                "u128" => TypeSize::U128,
+                                "usize" => TypeSize::Usize,
+                                "i8" => TypeSize::I8,
+                                "i16" => TypeSize::I16,
+                                "i32" => TypeSize::I32,
+                                "i64" => TypeSize::I64,
+                                "i128" => TypeSize::I128,
+                                "isize" => TypeSize::Isize,
                                 _ => {
                                     return Err(syn::Error::new(
                                         span,
@@ -722,6 +690,8 @@ impl syn::parse::Parse for AtomicWrapperOptions {
             atomic_name,
             derive,
             underlying_type_size,
+            no_debug,
+            no_default,
         })
     }
 }
@@ -777,7 +747,14 @@ enum TypeSize {
     U16,
     U32,
     U64,
+    U128,
     Usize,
+    I8,
+    I16,
+    I32,
+    I64,
+    I128,
+    Isize,
 }
 
 #[proc_macro_derive(AtomicEnum, attributes(atomic_enum))]
@@ -827,6 +804,12 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
         ..
     } = &input;
 
+    if variants.len() < 2 {
+        let span = ident.span();
+        let err = quote_spanned! { span => compile_error!("Expected an enum with at least two variants."); };
+        return err.into();
+    }
+
     let repr = attrs
         .iter()
         .find_map(|attr| {
@@ -836,22 +819,30 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
                 let _ = attr.parse_nested_meta(|meta| {
                     if meta.path.is_ident("u8") {
                         repr_size = Some(TypeSize::U8);
-                        Ok(())
                     } else if meta.path.is_ident("u16") {
                         repr_size = Some(TypeSize::U16);
-                        Ok(())
                     } else if meta.path.is_ident("u32") {
                         repr_size = Some(TypeSize::U32);
-                        Ok(())
                     } else if meta.path.is_ident("u64") {
                         repr_size = Some(TypeSize::U64);
-                        Ok(())
+                    } else if meta.path.is_ident("u128") {
+                        repr_size = Some(TypeSize::U128);
                     } else if meta.path.is_ident("usize") {
                         repr_size = Some(TypeSize::Usize);
-                        Ok(())
-                    } else {
-                        Ok(())
+                    } else if meta.path.is_ident("i8") {
+                        repr_size = Some(TypeSize::I8);
+                    } else if meta.path.is_ident("i16") {
+                        repr_size = Some(TypeSize::I16);
+                    } else if meta.path.is_ident("i32") {
+                        repr_size = Some(TypeSize::I32);
+                    } else if meta.path.is_ident("i64") {
+                        repr_size = Some(TypeSize::I64);
+                    } else if meta.path.is_ident("i128") {
+                        repr_size = Some(TypeSize::I128);
+                    } else if meta.path.is_ident("isize") {
+                        repr_size = Some(TypeSize::Isize);
                     }
+                    Ok(())
                 });
                 repr_size
             } else {
@@ -865,7 +856,7 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     // We only support C-style enums: No generics, no fields
     if !generics.params.is_empty() {
         let span = generics.span();
-        let err = quote_spanned! {span=> compile_error!("Expected an enum without generics."); };
+        let err = quote_spanned! {span => compile_error!("Expected an enum without generics."); };
         return err.into();
     }
 
@@ -899,16 +890,39 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
         return err.into();
     }
 
-    let options = if let Some(attr) = args.first() {
-        match attr.parse_args::<AtomicWrapperOptions>() {
-            Ok(opts) => opts,
-            Err(err) => return err.to_compile_error().into(),
+    let options = if let Some(attr) = args.into_iter().next() {
+        if attr.meta.require_path_only().is_ok() {
+            AtomicWrapperOptions {
+                atomic_name: None,
+                derive: None,
+                underlying_type_size: None,
+                no_debug: false,
+                no_default: false,
+            }
+        } else {
+            match attr.parse_args_with(|input: syn::parse::ParseStream| {
+                if input.is_empty() {
+                    return Ok(AtomicWrapperOptions {
+                        atomic_name: None,
+                        derive: None,
+                        underlying_type_size: None,
+                        no_debug: false,
+                        no_default: false,
+                    });
+                }
+                input.parse::<AtomicWrapperOptions>()
+            }) {
+                Ok(opts) => opts,
+                Err(err) => return err.to_compile_error().into(),
+            }
         }
     } else {
         AtomicWrapperOptions {
             atomic_name: None,
             derive: None,
             underlying_type_size: None,
+            no_debug: false,
+            no_default: false,
         }
     };
 
@@ -931,37 +945,24 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     ));
 
     // Write the impl block for the atomic wrapper
-    let enum_to_usize = enum_to_repr(&ident, repr);
-    let enum_from_usize = enum_from_repr(&ident, variants, repr);
     let atomic_enum_new = atomic_enum_new(&ident, &atomic_ident, repr);
 
-    let from_repr = Ident::new(
-        &format!(
-            "from_{}",
-            match repr {
-                TypeSize::U8 => "u8",
-                TypeSize::U16 => "u16",
-                TypeSize::U32 => "u32",
-                TypeSize::U64 => "u64",
-                TypeSize::Usize => "usize",
-            }
-        ),
-        ident.span(),
-    );
+    let from_repr = quote! { core::mem::transmute::<_, #ident> };
 
-    let to_repr = Ident::new(
-        &format!(
-            "to_{}",
-            match repr {
-                TypeSize::U8 => "u8",
-                TypeSize::U16 => "u16",
-                TypeSize::U32 => "u32",
-                TypeSize::U64 => "u64",
-                TypeSize::Usize => "usize",
-            }
-        ),
-        ident.span(),
-    );
+    let to_repr = match repr {
+        TypeSize::U8 => quote! { u8 },
+        TypeSize::U16 => quote! { u16 },
+        TypeSize::U32 => quote! { u32 },
+        TypeSize::U64 => quote! { u64 },
+        TypeSize::U128 => quote! { u128 },
+        TypeSize::Usize => quote! { usize },
+        TypeSize::I8 => quote! { i8 },
+        TypeSize::I16 => quote! { i16 },
+        TypeSize::I32 => quote! { i32 },
+        TypeSize::I64 => quote! { i64 },
+        TypeSize::I128 => quote! { i128 },
+        TypeSize::Isize => quote! { isize },
+    };
 
     let atomic_enum_into_inner = atomic_enum_into_inner(&ident, &from_repr);
     let atomic_enum_set = atomic_enum_set(&ident, &to_repr);
@@ -973,9 +974,6 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     output.extend(quote! {
         impl #atomic_ident {
             #atomic_enum_new
-            #enum_to_usize
-            #enum_from_usize
-
             #atomic_enum_into_inner
             #atomic_enum_set
             #atomic_enum_get
@@ -988,8 +986,6 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
     #[cfg(feature = "cas")]
     {
         let atomic_enum_swap = atomic_enum_swap(&ident, &to_repr, &from_repr);
-        let atomic_enum_compare_and_swap =
-            atomic_enum_compare_and_swap(&ident, &to_repr, &from_repr);
         let atomic_enum_compare_exchange =
             atomic_enum_compare_exchange(&ident, &to_repr, &from_repr);
         let atomic_enum_compare_exchange_weak =
@@ -998,7 +994,6 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
         output.extend(quote! {
             impl #atomic_ident {
                 #atomic_enum_swap
-                #atomic_enum_compare_and_swap
                 #atomic_enum_compare_exchange
                 #atomic_enum_compare_exchange_weak
             }
@@ -1007,7 +1002,12 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
 
     // Implement the from and debug traits
     output.extend(from_impl(&ident, &atomic_ident));
-    output.extend(debug_impl(&atomic_ident));
+    if !options.no_debug {
+        output.extend(debug_impl(&ident, &atomic_ident));
+    }
+    if !options.no_default {
+        output.extend(default_impl(&ident, &atomic_ident));
+    }
 
     output.into()
 }

@@ -7,12 +7,14 @@ use ::atomic_enum::AtomicEnum;
 #[derive(Debug, PartialEq, Eq, AtomicEnum)]
 enum DisplayableEnum {
     Foo,
+    Bar,
 }
 
 impl Display for DisplayableEnum {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         match self {
             DisplayableEnum::Foo => write!(f, "Foo"),
+            DisplayableEnum::Bar => write!(f, "Bar"),
         }
     }
 }

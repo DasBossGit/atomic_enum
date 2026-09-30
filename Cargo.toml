@@ -5,7 +5,7 @@
     edition     = "2024"
     keywords    = ["atomic", "enum"]
     name        = "atomic_enum"
-    version     = "0.3.0"
+    version     = "0.3.1"
 
 [lib]
     proc-macro = true
@@ -17,5 +17,5 @@
 [dependencies]
     proc-macro2 = "1"
     quote       = "1"
-    simsearch   = "0.3"
+    simsearch   = "0.4"
     syn         = { version = "2", features = ["full"] }

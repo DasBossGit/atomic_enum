@@ -42,7 +42,7 @@
 
 use ::proc_macro2::TokenTree;
 use ::simsearch::Index;
-use ::syn::punctuated::Punctuated;
+use ::syn::{Type, punctuated::Punctuated};
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use quote::{quote, quote_spanned};
@@ -260,6 +260,170 @@ fn atomic_enum_swap(
         /// and using `Release` makes the load part `Relaxed`.
         pub fn swap(&self, val: #ident, order: core::sync::atomic::Ordering) -> #ident {
             unsafe { #from_repr(self.0.swap(val as #to_repr, order)) }
+        }
+    }
+}
+
+#[cfg(feature = "atomic_try_update")]
+fn atomic_enum_update(
+    ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        /// Updates the atomic with the result of applying a function to the current value.
+        ///
+        /// `update` takes two `Ordering` arguments which describe the memory ordering of this operation. Possible values are `SeqCst`, `Acquire`, `Release`, `AcqRel` and `Relaxed`.
+        ///
+        /// The closure should return `Some(new_value)` to update the atomic, or `None` to leave it unchanged.
+        pub fn update(
+            &self,
+            set_order: ::core::sync::atomic::Ordering,
+            fetch_order: ::core::sync::atomic::Ordering,
+            mut f: impl FnMut(#ident) -> #ident,
+        ) {
+            self.0.update(set_order, fetch_order, |v: #to_repr| {
+                f(unsafe { #from_repr(v) }) as #to_repr
+            });
+        }
+    }
+}
+
+#[cfg(feature = "atomic_try_update")]
+fn atomic_enum_try_update(
+    ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        /// Attempts to update the atomic with the result of applying a function to the current value.
+        ///
+        /// `try_update` takes two `Ordering` arguments which describe the memory ordering of this operation. Possible values are `SeqCst`, `Acquire`, `Release`, `AcqRel` and `Relaxed`.
+        ///
+        /// The closure should return `Some(new_value)` to update the atomic, or `None` to leave it unchanged.
+        ///
+        /// Returns `Ok(new_value)` if the update was successful, or `Err(current_value)` if it was not.
+        pub fn try_update(
+            &self,
+            set_order: ::core::sync::atomic::Ordering,
+            fetch_order: ::core::sync::atomic::Ordering,
+            mut f: impl FnMut(#ident) -> Option<#ident>,
+        ) -> core::result::Result<#ident, #ident> {
+            self.0.try_update(set_order, fetch_order, |v: #to_repr| {
+                f(unsafe { #from_repr(v) }).map(|nv| nv as #to_repr)
+            }).map(|v: #to_repr| unsafe { #from_repr(v) }).map_err(|v: #to_repr| unsafe { #from_repr(v) })
+        }
+    }
+}
+
+#[cfg(feature = "cas")]
+fn atomic_enum_fetch_add_sub(
+    ident: &Ident,
+    atomic_ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::Add<#to_repr, Output = #to_repr> + ::core::ops::Sub<#to_repr, Output = #to_repr>
+        {
+            pub fn fetch_add(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_add(value as #to_repr, order)) }
+            }
+
+            pub fn fetch_sub(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_sub(value as #to_repr, order)) }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "cas")]
+fn atomic_enum_fetch_log(
+    ident: &Ident,
+    atomic_ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::BitAnd<#to_repr, Output = #to_repr> +
+                ::core::ops::BitOr<#to_repr, Output = #to_repr> +
+                ::core::ops::BitXor<#to_repr, Output = #to_repr> +
+                ::core::ops::Not<Output = #to_repr>
+        {
+            pub fn fetch_and(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_and(value as #to_repr, order)) }
+            }
+
+            pub fn fetch_nand(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_nand(value as #to_repr, order)) }
+            }
+
+            pub fn fetch_or(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_or(value as #to_repr, order)) }
+            }
+
+            pub fn fetch_xor(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_xor(value as #to_repr, order)) }
+            }
+        }
+    }
+}
+
+#[cfg(feature = "cas")]
+fn atomic_enum_fetch_min_max(
+    ident: &Ident,
+    atomic_ident: &Ident,
+    to_repr: &TokenStream2,
+    from_repr: &TokenStream2,
+) -> TokenStream2 {
+    quote! {
+        impl #atomic_ident
+        where
+            #to_repr: ::core::cmp::Ord
+        {
+            pub fn fetch_min(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_min(value as #to_repr, order)) }
+            }
+
+            pub fn fetch_max(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_max(value as #to_repr, order)) }
+            }
         }
     }
 }
@@ -998,6 +1162,38 @@ pub fn atomic_enum(input: TokenStream) -> TokenStream {
                 #atomic_enum_compare_exchange_weak
             }
         });
+
+        output.extend(atomic_enum_fetch_add_sub(
+            &ident,
+            &atomic_ident,
+            &to_repr,
+            &from_repr,
+        ));
+        output.extend(atomic_enum_fetch_log(
+            &ident,
+            &atomic_ident,
+            &to_repr,
+            &from_repr,
+        ));
+        output.extend(atomic_enum_fetch_min_max(
+            &ident,
+            &atomic_ident,
+            &to_repr,
+            &from_repr,
+        ));
+
+        #[cfg(feature = "atomic_try_update")]
+        {
+            let atomic_update = atomic_enum_update(&ident, &to_repr, &from_repr);
+            let atomic_try_update = atomic_enum_try_update(&ident, &to_repr, &from_repr);
+
+            output.extend(quote! {
+                impl #atomic_ident {
+                    #atomic_update
+                    #atomic_try_update
+                }
+            });
+        }
     }
 
     // Implement the from and debug traits

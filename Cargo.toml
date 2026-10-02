@@ -5,14 +5,16 @@
     edition     = "2024"
     keywords    = ["atomic", "enum"]
     name        = "atomic_enum"
-    version     = "0.3.1"
+    version     = "0.4.0"
 
 [lib]
     proc-macro = true
 
 [features]
     cas     = []      # enables compare-and-swap operations on atomics
-    default = ["cas"]
+    default = ["cas", "atomic_try_update"]
+
+    atomic_try_update = ["cas"]
 
 [dependencies]
     proc-macro2 = "1"

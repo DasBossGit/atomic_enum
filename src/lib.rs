@@ -326,7 +326,7 @@ fn atomic_enum_fetch_add_sub(
     quote! {
         impl #atomic_ident
         where
-            #to_repr: ::core::ops::Add<#to_repr, Output = #to_repr> + ::core::ops::Sub<#to_repr, Output = #to_repr>
+            #to_repr: ::core::ops::Add<#to_repr, Output = #to_repr>
         {
             pub fn fetch_add(
                 &self,
@@ -335,7 +335,12 @@ fn atomic_enum_fetch_add_sub(
             ) -> #ident {
                 unsafe { #from_repr(self.0.fetch_add(value as #to_repr, order)) }
             }
+        }
 
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::Sub<#to_repr, Output = #to_repr>
+        {
             pub fn fetch_sub(
                 &self,
                 order: ::core::sync::atomic::Ordering,
@@ -357,10 +362,7 @@ fn atomic_enum_fetch_log(
     quote! {
         impl #atomic_ident
         where
-            #to_repr: ::core::ops::BitAnd<#to_repr, Output = #to_repr> +
-                ::core::ops::BitOr<#to_repr, Output = #to_repr> +
-                ::core::ops::BitXor<#to_repr, Output = #to_repr> +
-                ::core::ops::Not<Output = #to_repr>
+            #to_repr: ::core::ops::BitAnd<#to_repr, Output = #to_repr>
         {
             pub fn fetch_and(
                 &self,
@@ -369,15 +371,12 @@ fn atomic_enum_fetch_log(
             ) -> #ident {
                 unsafe { #from_repr(self.0.fetch_and(value as #to_repr, order)) }
             }
+        }
 
-            pub fn fetch_nand(
-                &self,
-                order: ::core::sync::atomic::Ordering,
-                value: #ident,
-            ) -> #ident {
-                unsafe { #from_repr(self.0.fetch_nand(value as #to_repr, order)) }
-            }
-
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::BitOr<#to_repr, Output = #to_repr>
+        {
             pub fn fetch_or(
                 &self,
                 order: ::core::sync::atomic::Ordering,
@@ -385,7 +384,26 @@ fn atomic_enum_fetch_log(
             ) -> #ident {
                 unsafe { #from_repr(self.0.fetch_or(value as #to_repr, order)) }
             }
+        }
 
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::BitAnd<#to_repr, Output = #to_repr> +
+                ::core::ops::Not<Output = #to_repr>
+        {
+            pub fn fetch_nand(
+                &self,
+                order: ::core::sync::atomic::Ordering,
+                value: #ident,
+            ) -> #ident {
+                unsafe { #from_repr(self.0.fetch_nand(value as #to_repr, order)) }
+            }
+        }
+
+        impl #atomic_ident
+        where
+            #to_repr: ::core::ops::BitXor<#to_repr, Output = #to_repr>
+        {
             pub fn fetch_xor(
                 &self,
                 order: ::core::sync::atomic::Ordering,
